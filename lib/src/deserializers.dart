@@ -1,4 +1,5 @@
-import 'package:geopoint/geopoint.dart';
+import 'package:geojson/src/geopoint/geopoint.dart';
+import 'package:geojson/src/geopoint/geoserie.dart';
 
 import 'models.dart';
 

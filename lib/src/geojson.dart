@@ -185,6 +185,7 @@ class GeoJson {
     required bool verbose,
     String? nameProperty,
     GeoJsonQuery? query,
+    bool continueOnError = false,
   }) async {
     final finished = Completer<void>();
     late Iso iso;
@@ -201,7 +202,7 @@ class GeoJson {
     });
     final dataToProcess = _DataToProcess(
         data: data, nameProperty: nameProperty, verbose: verbose, query: query);
-    unawaited(iso.run(<dynamic>[dataToProcess]));
+    unawaited(iso.run(<dynamic>[dataToProcess, continueOnError]));
     await finished.future;
     _endSignalController.sink.add(true);
   }
@@ -434,11 +435,16 @@ class GeoJson {
   static void _processFeaturesIso(IsoRunner iso) {
     final args = iso.args!;
     final dataToProcess = args[0] as _DataToProcess;
-    _processFeatures(iso: iso, dataToProcess: dataToProcess);
+    final continueOnError = args[1] as bool;
+    _processFeatures(
+        iso: iso,
+        dataToProcess: dataToProcess,
+        continueOnError: continueOnError);
   }
 
   static void _processFeatures(
       {required _DataToProcess dataToProcess,
+      bool continueOnError = false,
       IsoRunner? iso,
       StreamSink<GeoJsonFeature<dynamic>?>? sink}) {
     if (iso == null) {
@@ -453,106 +459,113 @@ class GeoJson {
     final decoded = json.decode(data) as Map<String, dynamic>;
     final feats = decoded["features"] as List<dynamic>;
     for (final dFeature in feats) {
-      final feat = dFeature as Map<String, dynamic>;
-      Map<String, dynamic>? properties = <String, dynamic>{};
-      if (feat.containsKey("properties")) {
-        properties = feat["properties"] as Map<String, dynamic>?;
-      }
-      final geometry = feat["geometry"] as Map<String, dynamic>;
-      final geomType = geometry["type"].toString();
-      GeoJsonFeature<dynamic>? feature;
-      switch (geomType) {
-        case "GeometryCollection":
-          feature = GeoJsonFeature<GeoJsonGeometryCollection>()
-            ..properties = properties
-            ..type = GeoJsonFeatureType.geometryCollection
-            ..geometry = GeoJsonGeometryCollection();
-          if (nameProperty != null) {
-            feature.geometry.name = properties![nameProperty];
-          }
-          for (final geom in geometry["geometries"]) {
-            feature.geometry.add(_processGeometry(
-                geom as Map<String, dynamic>, properties, nameProperty));
-          }
-          break;
-        case "MultiPolygon":
-          if (query != null) {
-            if (query.geometryType != null) {
-              if (query.geometryType != GeoJsonFeatureType.multipolygon) {
-                continue;
-              }
-            }
-          }
-          feature = _processGeometry(geometry, properties, nameProperty);
-          break;
-        case "Polygon":
-          if (query != null) {
-            if (query.geometryType != null) {
-              if (query.geometryType != GeoJsonFeatureType.polygon) {
-                continue;
-              }
-            }
-          }
-          feature = _processGeometry(geometry, properties, nameProperty);
-          break;
-        case "MultiLineString":
-          if (query != null) {
-            if (query.geometryType != null) {
-              if (query.geometryType != GeoJsonFeatureType.multiline) {
-                continue;
-              }
-            }
-          }
-          feature = _processGeometry(geometry, properties, nameProperty);
-          break;
-        case "LineString":
-          if (query != null) {
-            if (query.geometryType != null) {
-              if (query.geometryType != GeoJsonFeatureType.line) {
-                continue;
-              }
-            }
-          }
-          feature = _processGeometry(geometry, properties, nameProperty);
-          break;
-        case "MultiPoint":
-          if (query != null) {
-            if (query.geometryType != null) {
-              if (query.geometryType != GeoJsonFeatureType.multipoint) {
-                continue;
-              }
-            }
-          }
-          feature = _processGeometry(geometry, properties, nameProperty);
-          break;
-        case "Point":
-          if (query != null) {
-            if (query.geometryType != null) {
-              if (query.geometryType != GeoJsonFeatureType.point) {
-                continue;
-              }
-            }
-          }
-          feature = _processGeometry(geometry, properties, nameProperty);
-          break;
-        default:
-          final e = FeatureNotSupported(geomType);
-          throw e;
-      }
-      if (query != null && properties != null) {
-        if (!_checkProperty(properties, query)) {
-          continue;
+      try {
+        final feat = dFeature as Map<String, dynamic>;
+        Map<String, dynamic>? properties = <String, dynamic>{};
+        if (feat.containsKey("properties")) {
+          properties = feat["properties"] as Map<String, dynamic>?;
         }
-      }
-      if (iso != null) {
-        iso.send(feature);
-      } else {
-        print("FEAT SINK $feature / ${feature?.type}");
-        sink?.add(feature);
-      }
-      if (verbose == true) {
-        print("${feature?.type} ${feature?.geometry?.name} : "
-            "${feature?.length} points");
+        final geometry = feat["geometry"] as Map<String, dynamic>;
+        final geomType = geometry["type"].toString();
+        GeoJsonFeature<dynamic>? feature;
+        switch (geomType) {
+          case "GeometryCollection":
+            feature = GeoJsonFeature<GeoJsonGeometryCollection>()
+              ..properties = properties
+              ..type = GeoJsonFeatureType.geometryCollection
+              ..geometry = GeoJsonGeometryCollection();
+            if (nameProperty != null) {
+              feature.geometry.name = properties![nameProperty];
+            }
+            for (final geom in geometry["geometries"]) {
+              feature.geometry.add(_processGeometry(
+                  geom as Map<String, dynamic>, properties, nameProperty));
+            }
+            break;
+          case "MultiPolygon":
+            if (query != null) {
+              if (query.geometryType != null) {
+                if (query.geometryType != GeoJsonFeatureType.multipolygon) {
+                  continue;
+                }
+              }
+            }
+            feature = _processGeometry(geometry, properties, nameProperty);
+            break;
+          case "Polygon":
+            if (query != null) {
+              if (query.geometryType != null) {
+                if (query.geometryType != GeoJsonFeatureType.polygon) {
+                  continue;
+                }
+              }
+            }
+            feature = _processGeometry(geometry, properties, nameProperty);
+            break;
+          case "MultiLineString":
+            if (query != null) {
+              if (query.geometryType != null) {
+                if (query.geometryType != GeoJsonFeatureType.multiline) {
+                  continue;
+                }
+              }
+            }
+            feature = _processGeometry(geometry, properties, nameProperty);
+            break;
+          case "LineString":
+            if (query != null) {
+              if (query.geometryType != null) {
+                if (query.geometryType != GeoJsonFeatureType.line) {
+                  continue;
+                }
+              }
+            }
+            feature = _processGeometry(geometry, properties, nameProperty);
+            break;
+          case "MultiPoint":
+            if (query != null) {
+              if (query.geometryType != null) {
+                if (query.geometryType != GeoJsonFeatureType.multipoint) {
+                  continue;
+                }
+              }
+            }
+            feature = _processGeometry(geometry, properties, nameProperty);
+            break;
+          case "Point":
+            if (query != null) {
+              if (query.geometryType != null) {
+                if (query.geometryType != GeoJsonFeatureType.point) {
+                  continue;
+                }
+              }
+            }
+            feature = _processGeometry(geometry, properties, nameProperty);
+            break;
+          default:
+            final e = FeatureNotSupported(geomType);
+            throw e;
+        }
+        if (query != null && properties != null) {
+          if (!_checkProperty(properties, query)) {
+            continue;
+          }
+        }
+        if (iso != null) {
+          iso.send(feature);
+        } else {
+          print("FEAT SINK $feature / ${feature?.type}");
+          sink?.add(feature);
+        }
+        if (verbose == true) {
+          print("${feature?.type} ${feature?.geometry?.name} : "
+              "${feature?.length} points");
+        }
+      } catch (err, stack) {
+        print("Failed to parse feature: ${dFeature}");
+        if (!continueOnError) {
+          rethrow;
+        }
       }
     }
     if (iso != null) {

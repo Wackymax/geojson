@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.0.0
+
+* Dependency updates
+* Add option to continue on parsing errors
+
 ## 1.0.0
 
 Migration to null safety
